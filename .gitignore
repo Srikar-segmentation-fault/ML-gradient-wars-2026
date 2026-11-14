@@ -1,0 +1,28 @@
+# --- environments and caches ---
+.venv*/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# --- competition data (not redistributed) ---
+/train.csv
+/test.csv
+/accounts.csv
+/merchants.csv
+/sample_submission.csv
+/data/
+
+# --- generated artifacts (rebuilt by the pipeline) ---
+*.parquet
+*.npy
+/submission*.csv
+diagnostics_*.txt
+results_backup*.csv
+*.log
+
+# --- local drafts, experiments and analysis scripts not shipped ---
+README (*).md
+/gitignore
+*_backup.py
+/observations/
+/upi-fraud-rings-gradient-wars/
