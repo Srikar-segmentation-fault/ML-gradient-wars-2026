@@ -29,7 +29,12 @@ import time
 import polars as pl
 
 SRC = "build_features_v2.py"
-OUT = "features_v2_half.parquet"
+# --bit B picks which bit of the hex txn_id decides the half (default 0 = original split).
+# A different bit gives an independent random thinning -> a second, decorrelated feature set.
+BIT = int(sys.argv[sys.argv.index("--bit") + 1]) if "--bit" in sys.argv else 0
+SUFFIX = "" if BIT == 0 else f"_b{BIT}"
+OUT = f"features_v2_half{SUFFIX}.parquet"
+DIV = 2 ** BIT
 CAT_COLS = [
     "receiver_type", "txn_type", "merchant_category", "device_city", "app",
     "sender_home_city", "sender_bank", "sender_kyc", "sender_os",
@@ -40,12 +45,16 @@ KEEP_FROM_ORIG = set(CAT_COLS) | {"txn_id", "timestamp", "label", "is_test"}
 
 
 def half_expr(k):
-    return (pl.col("txn_id").str.slice(2).str.to_integer(base=16) % 2) == k
+    return ((pl.col("txn_id").str.slice(2).str.to_integer(base=16) // DIV) % 2) == k
+
+
+def tmp_name(k):
+    return f"_half{SUFFIX}_run{k}.parquet"
 
 
 def run_half(k):
     """Executes build_features_v2.py's main() with train filtered to half k and a different output."""
-    out = f"_half_run{k}.parquet"
+    out = tmp_name(k)
     if os.path.exists(out):
         print(f"[skip] {out} exists")
         return out
@@ -53,8 +62,9 @@ def run_half(k):
     a = 'train_pl = pl.read_csv("train.csv")'
     b = 'out_file = "features_v2.parquet"'
     assert src.count(a) == 1 and src.count(b) == 1, "build_features_v2.py changed - patch points not found"
-    src = src.replace(a, a + f'\n    train_pl = train_pl.filter((pl.col("txn_id").str.slice(2)'
-                             f'.str.to_integer(base=16) % 2) == {k})\n    print("HALF {k}: train rows", train_pl.height)')
+    src = src.replace(a, a + f'\n    train_pl = train_pl.filter(((pl.col("txn_id").str.slice(2)'
+                             f'.str.to_integer(base=16) // {DIV}) % 2) == {k})\n'
+                             f'    print("BIT {BIT} HALF {k}: train rows", train_pl.height)')
     src = src.replace(b, f'out_file = "{out}"')
     t = time.time()
     g = {"__name__": "__half__"}
@@ -74,18 +84,19 @@ def main():
 
     # sanity: every txn_id parses as hex, halves are balanced
     ids = pl.read_csv("train.csv", columns=["txn_id", "label"])
-    h = ids.with_columns((pl.col("txn_id").str.slice(2).str.to_integer(base=16) % 2).alias("h"))
+    h = ids.with_columns(((pl.col("txn_id").str.slice(2).str.to_integer(base=16) // DIV) % 2).alias("h"))
     assert h["h"].null_count() == 0, "some txn_id are not TX<hex>"
+    print(f"bit {BIT} -> {OUT}")
     print(h.group_by("h").agg(pl.len(), (pl.col("label") != "legit").mean().alias("fraud_rate")).sort("h"))
 
     # each half in its own process (keeps peak memory at one build)
     for k in (0, 1):
-        subprocess.run([sys.executable, __file__, "--half", str(k)], check=True)
+        subprocess.run([sys.executable, __file__, "--half", str(k), "--bit", str(BIT)], check=True)
 
     orig = pl.read_parquet("features_v2.parquet")
     feat_cols = [c for c in orig.columns if c not in KEEP_FROM_ORIG]
-    r0 = pl.read_parquet("_half_run0.parquet")
-    r1 = pl.read_parquet("_half_run1.parquet")
+    r0 = pl.read_parquet(tmp_name(0))
+    r1 = pl.read_parquet(tmp_name(1))
     missing = [c for c in feat_cols if c not in r0.columns]
     assert not missing, f"half build lacks columns: {missing}"
 
