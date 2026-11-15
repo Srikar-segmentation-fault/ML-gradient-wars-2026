@@ -194,6 +194,10 @@ def main():
     ap.add_argument("--threads", type=int, default=None,
                     help="default: physical cores. 0 = let LightGBM decide (use for both train and predict)")
     ap.add_argument("--sample", action="store_true", help="20%% of train rows (smoke test)")
+    ap.add_argument("--undrop", default="",
+                    help="comma-separated v3_safe-dropped columns to put back (e.g. on density-matched features)")
+    ap.add_argument("--val_features", default="",
+                    help="diagnostic: take validation rows' features from this parquet (same row order)")
     args = ap.parse_args()
 
     tag = args.name
@@ -224,11 +228,17 @@ def main():
         extra = [c.strip() for c in args.drop.replace("\\", "").split(",") if c.strip()]
         if args.no_ip:
             extra += [c for c in df.columns if "ip_risk" in c.lower()]
-        extra = sorted(set(extra) - set(V3_SAFE_DROP))
+        undrop = {c.strip() for c in args.undrop.split(",") if c.strip()}
+        bad_undrop = sorted(undrop - set(V3_SAFE_DROP))
+        assert not bad_undrop, f"--undrop columns are not in the v3_safe drop list: {bad_undrop}"
+        safe_drop = [c for c in V3_SAFE_DROP if c not in undrop]
+        if undrop:
+            print(f"Re-enabled (--undrop) {len(undrop)} v3_safe columns: {sorted(undrop)}")
+        extra = sorted(set(extra) - set(safe_drop))
         unknown = [c for c in extra if c not in df.columns]
         if unknown:
             print(f"[WARN] extra drop columns not in parquet: {unknown}")
-        drop_all = set(V3_SAFE_DROP) | set(extra)
+        drop_all = set(safe_drop) | set(extra)
 
         def keep(c):
             return (c not in EXCLUDED_COLS and c not in drop_all
@@ -265,6 +275,16 @@ def main():
         X_te = test_df[feature_cols].to_numpy(dtype=np.float32)
         X_va, y_va = X_all_full[val_mask], y_all_full[val_mask]
         X_tr, y_tr = X_all_full[~val_mask], y_all_full[~val_mask]
+        if args.val_features:
+            # cross-density check: train on --features, validate on the same rows from --val_features
+            alt = pd.read_parquet(args.val_features, columns=["txn_id", "is_test"] + feature_cols)
+            alt = alt[alt["is_test"] == 0]
+            assert not args.sample, "--val_features is not supported with --sample"
+            assert np.array_equal(alt["txn_id"].to_numpy(), train_df["txn_id"].to_numpy()), \
+                "row order of --val_features differs from --features"
+            X_va = alt[feature_cols].to_numpy(dtype=np.float32)[val_mask]
+            del alt
+            print(f"[--val_features] validation X taken from {args.val_features} (test X unchanged)")
         if args.legit_frac < 1.0:
             k = legit_keep_idx(y_tr, args.legit_frac, args.seed)
             print(f"Downsampled legit in TRAIN part to {args.legit_frac}: {len(y_tr):,} -> {len(k):,} rows")

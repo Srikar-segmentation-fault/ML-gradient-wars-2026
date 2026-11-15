@@ -1,7 +1,7 @@
 # ML Gradient Wars 2026: UPI fraud rings (12 classes, Macro-F1)
 
-Final submission: an equal-weight probability blend of five LightGBM models (tag `ens5`),
-**public leaderboard 0.4946**. The final ranking uses the private 70% of the test set.
+Final submission: an equal-weight probability blend of seven LightGBM models (tag `ens7h`),
+**public leaderboard 0.4958**. The final ranking uses the private 70% of the test set.
 
 ## Quick start
 
@@ -107,6 +107,7 @@ Public leaderboard:
 | blend ens3 (v3_safe, v3_noip, v3_full_new_noexp) | 0.4924 |
 | **blend ens5 (ens3 + m_extra + m_down), equal weights** | **0.4946** |
 | blend ens5w (m_down weighted 0.5) | 0.4922 |
+| **blend ens7h (ens5 + m_down_half + m_down_half_ud)** | **0.4958 (Best)** |
 
 Differences below about 0.003 are within noise on the 30% public split. We picked the final
 upload as the equal-weight blend, which is also the most stable choice for the private split.

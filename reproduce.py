@@ -43,11 +43,12 @@ V3_SAFE_DROP = V3_EXPANDING + [
 ]
 assert len(V3_EXPANDING) == 9 and len(V3_SAFE_DROP) == 17
 
-MEMBERS = ["v3_safe", "v3_noip", "v3_full_new_noexp", "m_extra", "m_down"]
+MEMBERS = ["v3_safe", "v3_noip", "v3_full_new_noexp", "m_extra", "m_down", "m_down_half", "m_down_half_ud"]
 
 STEPS = [
     # (name, outputs that mark the step done, argv)
     ("features", ["features_v2.parquet"], [PY, "build_features_v2.py"]),
+    ("features_half", ["features_v2_half.parquet"], [PY, "build_features_half.py"]),
     ("v3_full_new_noexp", None,
      [PY, "train_v3.py", "--name", "v3_full_new_noexp", "--drop", ",".join(V3_EXPANDING)]),
     ("v3_safe", None,
@@ -60,8 +61,15 @@ STEPS = [
     ("m_down", None,
      [PY, "train_member.py", "--name", "m_down", "--legit_frac", "0.3", "--seed", "21",
       "--threads", THREADS, "--params", '{"num_leaves": 63}']),
-    ("blend", ["submission_blend_ens5.csv"],
-     [PY, "blend.py", "--runs", ",".join(MEMBERS), "--tag", "ens5"]),
+    ("m_down_half", None,
+     [PY, "train_member.py", "--name", "m_down_half", "--features", "features_v2_half.parquet",
+      "--legit_frac", "0.3", "--seed", "21", "--threads", THREADS, "--params", '{"num_leaves": 63}']),
+    ("m_down_half_ud", None,
+     [PY, "train_member.py", "--name", "m_down_half_ud", "--features", "features_v2_half.parquet",
+      "--legit_frac", "0.3", "--seed", "21", "--threads", THREADS, "--params", '{"num_leaves": 63}',
+      "--undrop", "receiver_unique_senders_1h,receiver_unique_senders_24h,sender_unique_receivers_1h,sender_unique_receivers_24h,device_unique_senders_1h,device_unique_senders_24h"]),
+    ("blend", ["submission_blend_ens7h.csv"],
+     [PY, "blend.py", "--runs", ",".join(MEMBERS), "--tag", "ens7h"]),
 ]
 
 
@@ -119,7 +127,7 @@ def main():
             continue
         run(argv)
 
-    shutil.copyfile("submission_blend_ens5.csv", "submission.csv")
+    shutil.copyfile("submission_blend_ens7h.csv", "submission.csv")
     check_submission("submission.csv")
     print(f"\nDone in {(time.time() - t0) / 60:.1f} min -> submission.csv")
 
