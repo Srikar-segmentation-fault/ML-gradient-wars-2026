@@ -2,19 +2,21 @@
 reproduce.py - rebuilds the top public uploads from the raw CSVs.
 
 Supported presets (--preset):
-  - ens7h        (default, public LB 0.4958): 5 full-density + 2 half-density members
-  - ens8hh       (3 full-density + 5 half-density members across bit-0 and bit-7 splits)
-  - ens10h       (5 full-density + 5 half-density members)
-  - ens11h       (ens10h + m_half_xt)
-  - ens16_master (all 16 full-density and multi-split half-density members)
+  - ens7h          (default, public LB 0.4958): 5 full-density + 2 half-density members (equal weights)
+  - ens14_balanced (5 full-density at weight 3 + 9 half-density members at weight 1, highest raw val F1 0.4639)
+  - ens15_master   (5 full-density + 10 half-density members, equal weights, val eval-half 0.4715)
+  - ens8hh         (3 full-density + 5 half-density members across bit-0 and bit-7 splits)
+  - ens10h         (5 full-density + 5 half-density members)
+  - ens11h         (ens10h + m_half_xt)
+  - ens16_master   (all 16 full-density and multi-split half-density members)
 
 Usage (Python 3.12, from the repo root, with train.csv / test.csv / accounts.csv / merchants.csv
 in the same folder):
-    python reproduce.py                         # default: ens7h -> submission.csv
-    python reproduce.py --preset ens11h         # 11-model blend -> submission.csv
-    python reproduce.py --preset ens16_master   # 16-model blend -> submission.csv
-    python reproduce.py --skip-existing         # resume: skip steps whose outputs already exist
-    python reproduce.py --smoke                 # quick check: features + one 20%-sample member, 50 rounds
+    python reproduce.py                            # default: ens7h -> submission.csv
+    python reproduce.py --preset ens14_balanced    # 14-model group-balanced blend -> submission.csv
+    python reproduce.py --preset ens15_master      # 15-model equal-weight blend -> submission.csv
+    python reproduce.py --skip-existing            # resume: skip steps whose outputs already exist
+    python reproduce.py --smoke                    # quick check: features + one 20%-sample member, 50 rounds
 
 Run in a clean folder. The training scripts never overwrite outputs (they add a _run2 suffix),
 so stale val_probs_*/test_probs_* files from an older run would be picked up by blend.py.
@@ -74,19 +76,19 @@ ALL_STEPS = {
                          "--params", '{"extra_trees": true, "feature_fraction": 0.4, "min_child_samples": 200}',
                          "--undrop", ",".join(UD6)]),
     "m_half_L95": (None, [PY, "train_member.py", "--name", "m_half_L95", "--features", "features_v2_half.parquet",
-                          "--legit_frac", "0.3", "--seed", "61", "--rounds", "175", "--threads", THREADS,
+                          "--legit_frac", "0.3", "--seed", "61", "--rounds", "175", "--threads", "0",
                           "--params", '{"num_leaves": 95, "min_child_samples": 180, "feature_fraction": 0.5}',
                           "--undrop", ",".join(UD8)]),
     "m_half_col35": (None, [PY, "train_member.py", "--name", "m_half_col35", "--features", "features_v2_half.parquet",
-                            "--legit_frac", "0.3", "--seed", "71", "--rounds", "200", "--threads", THREADS,
+                            "--legit_frac", "0.3", "--seed", "71", "--rounds", "200", "--threads", "0",
                             "--params", '{"num_leaves": 63, "feature_fraction": 0.35, "bagging_fraction": 0.85, "lambda_l1": 2.0, "lambda_l2": 5.0}',
                             "--undrop", ",".join(UD7)]),
     "m_half_d22": (None, [PY, "train_member.py", "--name", "m_half_d22", "--features", "features_v2_half.parquet",
-                          "--legit_frac", "0.22", "--seed", "81", "--rounds", "175", "--threads", THREADS,
+                          "--legit_frac", "0.22", "--seed", "81", "--rounds", "175", "--threads", "0",
                           "--params", '{"num_leaves": 63, "min_child_samples": 250}',
                           "--undrop", ",".join(UD7)]),
     "m_half_d45_noip": (None, [PY, "train_member.py", "--name", "m_half_d45_noip", "--features", "features_v2_half.parquet",
-                               "--legit_frac", "0.45", "--seed", "91", "--rounds", "175", "--threads", THREADS, "--no-ip",
+                               "--legit_frac", "0.45", "--seed", "91", "--rounds", "175", "--threads", "0", "--no-ip",
                                "--params", '{"num_leaves": 75, "min_child_samples": 250}',
                                "--undrop", ",".join(UD7)]),
     "m_half_b7_L95": (None, [PY, "train_member.py", "--name", "m_half_b7_L95", "--features", "features_v2_half_b7.parquet",
@@ -95,14 +97,42 @@ ALL_STEPS = {
                              "--undrop", ",".join(UD8)]),
 }
 
+# Each preset maps to (list_of_members, optional_weights_string)
 PRESETS = {
-    "ens7h": ["v3_safe", "v3_noip", "v3_full_new_noexp", "m_extra", "m_down", "m_down_half", "m_down_half_ud"],
-    "ens8hh": ["v3_safe", "m_extra", "m_down", "m_down_half", "m_down_half_ud", "m_half_b7", "m_half_s22", "m_half_b7_noip"],
-    "ens10h": ["v3_safe", "v3_noip", "v3_full_new_noexp", "m_extra", "m_down", "m_down_half", "m_down_half_ud", "m_half_b7", "m_half_s22", "m_half_b7_noip"],
-    "ens11h": ["v3_safe", "v3_noip", "v3_full_new_noexp", "m_extra", "m_down", "m_down_half", "m_down_half_ud", "m_half_b7", "m_half_s22", "m_half_b7_noip", "m_half_xt"],
-    "ens16_master": ["v3_safe", "v3_noip", "v3_full_new_noexp", "m_extra", "m_down", "m_down_half", "m_down_half_ud",
-                     "m_half_b7", "m_half_s22", "m_half_b7_noip", "m_half_xt", "m_half_L95", "m_half_col35",
-                     "m_half_d22", "m_half_d45_noip", "m_half_b7_L95"],
+    "ens7h": (
+        ["v3_safe", "v3_noip", "v3_full_new_noexp", "m_extra", "m_down", "m_down_half", "m_down_half_ud"],
+        None,
+    ),
+    "ens14_balanced": (
+        ["v3_safe", "v3_noip", "v3_full_new_noexp", "m_extra", "m_down",
+         "m_down_half", "m_down_half_ud", "m_half_b7", "m_half_s22", "m_half_b7_noip",
+         "m_half_L95", "m_half_col35", "m_half_d22", "m_half_b7_L95"],
+        "3,3,3,3,3,1,1,1,1,1,1,1,1,1",
+    ),
+    "ens15_master": (
+        ["v3_safe", "v3_noip", "v3_full_new_noexp", "m_extra", "m_down",
+         "m_down_half", "m_down_half_ud", "m_half_b7", "m_half_s22", "m_half_b7_noip",
+         "m_half_xt", "m_half_L95", "m_half_col35", "m_half_d22", "m_half_b7_L95"],
+        None,
+    ),
+    "ens8hh": (
+        ["v3_safe", "m_extra", "m_down", "m_down_half", "m_down_half_ud", "m_half_b7", "m_half_s22", "m_half_b7_noip"],
+        None,
+    ),
+    "ens10h": (
+        ["v3_safe", "v3_noip", "v3_full_new_noexp", "m_extra", "m_down", "m_down_half", "m_down_half_ud", "m_half_b7", "m_half_s22", "m_half_b7_noip"],
+        None,
+    ),
+    "ens11h": (
+        ["v3_safe", "v3_noip", "v3_full_new_noexp", "m_extra", "m_down", "m_down_half", "m_down_half_ud", "m_half_b7", "m_half_s22", "m_half_b7_noip", "m_half_xt"],
+        None,
+    ),
+    "ens16_master": (
+        ["v3_safe", "v3_noip", "v3_full_new_noexp", "m_extra", "m_down", "m_down_half", "m_down_half_ud",
+         "m_half_b7", "m_half_s22", "m_half_b7_noip", "m_half_xt", "m_half_L95", "m_half_col35",
+         "m_half_d22", "m_half_d45_noip", "m_half_b7_L95"],
+        None,
+    ),
 }
 
 
@@ -155,7 +185,7 @@ def main():
         print(f"\nSmoke test OK in {time.time() - t0:.0f}s")
         return
 
-    members = PRESETS[args.preset]
+    members, weights = PRESETS[args.preset]
     needed_features = ["features", "features_half"]
     if any("b7" in m for m in members):
         needed_features.append("features_half_b7")
@@ -169,7 +199,10 @@ def main():
         run(argv)
 
     sub_blend = f"submission_blend_{args.preset}.csv"
-    run([PY, "blend.py", "--runs", ",".join(members), "--tag", args.preset])
+    blend_cmd = [PY, "blend.py", "--runs", ",".join(members), "--tag", args.preset]
+    if weights:
+        blend_cmd += ["--weights", weights]
+    run(blend_cmd)
     shutil.copyfile(sub_blend, "submission.csv")
     check_submission("submission.csv")
     print(f"\nDone in {(time.time() - t0) / 60:.1f} min -> submission.csv")
